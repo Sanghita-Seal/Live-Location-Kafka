@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Live Map</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    :root {
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #dc2626;
+
+      /* glass */
+      --glass-bg: rgba(255, 255, 255, 0.55);
+      --glass-border: rgba(255, 255, 255, 0.35);
+      --glass-shadow: 0 10px 30px rgba(0,0,0,0.12);
+
+      --green: #16a34a;
+      --green-bg: rgba(22,163,74,0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Inter", "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #f8fafc;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* GLASS BASE */
+    .glass {
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+
+    /* TOP BAR */
+    .topbar {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 40px);
+      max-width: 1000px;
+      height: 64px;
+      border-radius: 16px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 1000;
+    }
+
+    .brand {
+      font-weight: 600;
+      font-size: 0.95rem;
+      letter-spacing: 0.3px;
+    }
+
+    /* STATUS BADGE */
+    .status {
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      color: var(--muted);
+      transition: 0.3s ease;
+    }
+
+    .status.active {
+      background: var(--green-bg);
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    /* FLOATING BUTTONS */
+    .floating-controls {
+      position: absolute;
+      right: 20px;
+      bottom: 90px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 1000;
+    }
+
+    .btn {
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: var(--glass-shadow);
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      background: #1d4ed8;
+    }
+
+    .btn-danger {
+      background: rgba(255,255,255,0.8);
+      border: 1px solid #e2e8f0;
+      color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: #fee2e2;
+    }
+
+    /* INFO STRIP */
+    .info-strip {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 40px);
+      max-width: 900px;
+      padding: 12px 18px;
+      border-radius: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+      z-index: 1000;
+    }
+
+    .info-left {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    /* MAP AVATAR */
+    .map-avatar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      font-size: 0.75rem;
+      font-weight: bold;
+      box-shadow: 0 6px 14px rgba(37,99,235,0.35);
+    }
+
+    .leaflet-tooltip.user-tag {
+      background: rgba(255,255,255,0.9);
+      border: 1px solid #e2e8f0;
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      backdrop-filter: blur(8px);
+    }
+
+    @media (max-width: 768px) {
+      .topbar {
+        flex-direction: column;
+        height: auto;
+        padding: 10px;
+        gap: 6px;
+      }
+
+      .info-strip {
+        flex-direction: column;
+        gap: 6px;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="map"></div>
+
+  <!-- TOP BAR -->
+  <div class="topbar glass">
+    <div class="brand" id="current-user-name">Loading...</div>
+    <div class="status" id="connection-pill">Connecting...</div>
+  </div>
+
+  <!-- FLOATING BUTTONS -->
+  <div class="floating-controls">
+    <button class="btn btn-primary" id="center-map-btn">
+      Center on Me
+    </button>
+
+    <button class="btn btn-danger" id="logout-btn">
+      Logout
+    </button>
+  </div>
+
+  <!-- INFO STRIP -->
+  <div class="info-strip glass">
+    <div class="info-left">
+      <span id="people-pill">0 people</span>
+      <span id="status-text">Starting session...</span>
+    </div>
+    <span id="last-update-label">Waiting...</span>
+  </div>
+
+  <!-- LIBS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    const accessToken = localStorage.getItem('accessToken');
+      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      const isLoggedIn = localStorage.getItem('isLoggedIn');
+
+      if (!accessToken || isLoggedIn !== 'true') {
+        window.location.replace('/');
+      }
+
+      const socket = io({
+        auth: {
+          accessToken,
+        },
+        timeout: 5000,
+        reconnectionAttempts: 3,
+      });
+
+      const map = L.map('map', {
+        zoomControl: false,
+      }).setView([20.5937, 78.9629], 5);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+
+      const currentUserName = document.getElementById('current-user-name');
+      const statusText = document.getElementById('status-text');
+      const connectionPill = document.getElementById('connection-pill');
+      const peoplePill = document.getElementById('people-pill');
+      const lastUpdateLabel = document.getElementById('last-update-label');
+      const centerMapBtn = document.getElementById('center-map-btn');
+      const logoutBtn = document.getElementById('logout-btn');
+
+      const remoteMarkers = new Map();
+      let myCurrentLocationMarker = null;
+      let myLastKnownLocation = null;
+      let mySocketId = null;
+      let locationWatcherId = null;
+      let locationBroadcastStarted = false;
+      let resolveSessionReady;
+      let rejectSessionReady;
+      const sessionReady = new Promise((resolve) => {
+        resolveSessionReady = resolve;
+      }).catch((error) => {
+        statusText.textContent =
+          error.message || 'Unable to start your live session.';
+        return null;
+      });
+      const sessionFailure = new Promise((_, reject) => {
+        rejectSessionReady = reject;
+      });
+
+      currentUserName.textContent = storedUser?.userName || 'Signed-in user';
+
+      function createInitialBadge(name) {
+        return (name || '?').trim().charAt(0).toUpperCase() || '?';
+      }
+
+      function createMarkerIcon(name) {
+        return L.divIcon({
+          className: '',
+          html: `<div class="map-avatar">${createInitialBadge(name)}</div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        });
+      }
+
+      function updatePeopleCount() {
+        const totalVisiblePeople = remoteMarkers.size + (myCurrentLocationMarker ? 1 : 0);
+        peoplePill.textContent =
+          totalVisiblePeople === 1
+            ? '1 person visible'
+            : `${totalVisiblePeople} people visible`;
+      }
+
+      function formatTime(date) {
+        return new Intl.DateTimeFormat(undefined, {
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+        }).format(date);
+      }
+
+      function updateLastUpdateLabel(date, label) {
+        lastUpdateLabel.textContent = `${label} at ${formatTime(date)}`;
+      }
+
+      function clearSavedSession() {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+        localStorage.removeItem('isLoggedIn');
+      }
+
+      function showLoggedOutState(message) {
+        connectionPill.textContent = 'Login required';
+        statusText.textContent = message;
+        clearSavedSession();
+      }
+
+      function upsertMarker(id, userName, latitude, longitude, isSelf) {
+        const markerLabel = isSelf ? `${userName} (You)` : userName;
+        const popupContent = `
+          <strong>${markerLabel}</strong><br />
+          <span>Lat: ${latitude.toFixed(5)}</span><br />
+          <span>Lng: ${longitude.toFixed(5)}</span>
+        `;
+
+        if (isSelf) {
+          if (!myCurrentLocationMarker) {
+            myCurrentLocationMarker = L.marker([latitude, longitude], {
+              icon: createMarkerIcon(userName),
+            })
+              .addTo(map)
+              .bindPopup(popupContent)
+              .bindTooltip(markerLabel, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -12],
+                className: 'user-tag',
+              });
+          } else {
+            myCurrentLocationMarker.setLatLng([latitude, longitude]);
+            myCurrentLocationMarker.setIcon(createMarkerIcon(userName));
+            myCurrentLocationMarker.setPopupContent(popupContent);
+            myCurrentLocationMarker.setTooltipContent(markerLabel);
+          }
+
+          updatePeopleCount();
+          return;
+        }
+
+        if (!remoteMarkers.has(id)) {
+          const marker = L.marker([latitude, longitude], {
+            icon: createMarkerIcon(userName),
+          })
+            .addTo(map)
+            .bindPopup(popupContent)
+            .bindTooltip(userName, {
+              permanent: true,
+              direction: 'top',
+              offset: [0, -12],
+              className: 'user-tag',
+            });
+          remoteMarkers.set(id, marker);
+        } else {
+          const existingMarker = remoteMarkers.get(id);
+          existingMarker.setLatLng([latitude, longitude]);
+          existingMarker.setIcon(createMarkerIcon(userName));
+          existingMarker.setPopupContent(popupContent);
+          existingMarker.setTooltipContent(userName);
+        }
+
+        updatePeopleCount();
+      }
+
+      function getUsersCurrentLocation() {
+        return new Promise((res, rej) => {
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                console.log(`Got user's location`, position);
+                const latitude = position.coords.latitude;
+                const longitude = position.coords.longitude;
+                res({ latitude, longitude });
+              },
+              (err) => {
+                rej(new Error(err.message || 'Unable to get your current location.'));
+              },
+
+              { enableHighAccuracy: true },
+            );
+          } else {
+            rej(new Error('Geolocation is not available in this browser.'));
+          }
+        });
+      }
+
+      function updateOwnLocation(latitude, longitude) {
+        myLastKnownLocation = { latitude, longitude };
+        upsertMarker(
+          mySocketId,
+          currentUserName.textContent,
+          latitude,
+          longitude,
+          true,
+        );
+      }
+
+      function publishLocation(latitude, longitude) {
+        updateOwnLocation(latitude, longitude);
+
+        if (!socket.connected || !mySocketId) {
+          updateLastUpdateLabel(new Date(), 'Local preview updated');
+          return;
+        }
+
+        socket.emit('client:location:update', { latitude, longitude });
+        updateLastUpdateLabel(new Date(), 'Your location sent');
+      }
+
+      async function publishCurrentLocation() {
+        const { latitude, longitude } = await getUsersCurrentLocation();
+        publishLocation(latitude, longitude);
+      }
+
+      function startLocationUpdates() {
+        if (locationBroadcastStarted) {
+          return;
+        }
+
+        locationBroadcastStarted = true;
+
+        if (!('geolocation' in navigator)) {
+          statusText.textContent = 'Geolocation is not available in this browser.';
+          return;
+        }
+
+        locationWatcherId = navigator.geolocation.watchPosition(
+          (position) => {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            publishLocation(latitude, longitude);
+          },
+          (error) => {
+            statusText.textContent =
+              error.message || 'Unable to refresh your current location.';
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 10000,
+          },
+        );
+      }
+
+      socket.on('server:session', (data) => {
+        mySocketId = data.socketId;
+        currentUserName.textContent = data.user?.userName || currentUserName.textContent;
+        localStorage.setItem('user', JSON.stringify(data.user));
+        resolveSessionReady?.();
+      });
+
+      socket.on('server:location:update', (data) => {
+        const { id, userName, latitude, longitude, updatedAt } = data;
+
+        if (!id || typeof latitude !== 'number' || typeof longitude !== 'number') {
+          return;
+        }
+
+        const isSelf = id === mySocketId;
+        upsertMarker(
+          id,
+          userName || (isSelf ? currentUserName.textContent : 'Unknown User'),
+          latitude,
+          longitude,
+          isSelf,
+        );
+
+        if (!isSelf) {
+          updateLastUpdateLabel(
+            updatedAt ? new Date(updatedAt) : new Date(),
+            `${userName || 'Someone'} moved`,
+          );
+        }
+      });
+
+      socket.on('connect', () => {
+        connectionPill.textContent = 'Live connection active';
+        statusText.textContent = 'Connected. Sharing your latest live position.';
+        map.invalidateSize();
+      });
+
+      socket.on('connect_error', (error) => {
+        const message = error.message || 'Unable to connect to live updates.';
+        socket.disconnect();
+        rejectSessionReady?.(new Error(message));
+        showLoggedOutState(message);
+      });
+
+      socket.on('disconnect', () => {
+        connectionPill.textContent = 'Reconnecting...';
+        statusText.textContent = 'Connection dropped. Trying to reconnect now.';
+      });
+
+      tileLayer.on('load', () => {
+        map.invalidateSize();
+      });
+
+      tileLayer.on('tileerror', () => {
+        statusText.textContent =
+          'Map tiles could not load right now. Your location sharing can still work.';
+      });
+
+      centerMapBtn.addEventListener('click', () => {
+        if (!myLastKnownLocation) {
+          return;
+        }
+
+        map.flyTo([myLastKnownLocation.latitude, myLastKnownLocation.longitude], 15, {
+          duration: 1.2,
+        });
+      });
+
+      logoutBtn.addEventListener('click', () => {
+        if (locationWatcherId !== null) {
+          navigator.geolocation.clearWatch(locationWatcherId);
+        }
+        clearSavedSession();
+        window.location.replace('/');
+      });
+
+      async function main() {
+        requestAnimationFrame(() => {
+          map.invalidateSize();
+        });
+
+        try {
+          const { latitude, longitude } = await getUsersCurrentLocation();
+          map.setView([latitude, longitude], 15);
+          updateOwnLocation(latitude, longitude);
+          statusText.textContent = 'Location ready. Waiting for live sync.';
+          updateLastUpdateLabel(new Date(), 'Local preview ready');
+        } catch (error) {
+          statusText.textContent =
+            error.message || 'Please allow location access to join the live map.';
+        }
+
+        const sessionResult = await Promise.race([
+          sessionReady,
+          sessionFailure.catch((error) => error),
+          new Promise((resolve) => {
+            setTimeout(() => resolve(new Error('Live session timed out.')), 7000);
+          }),
+        ]);
+
+        if (sessionResult instanceof Error) {
+          socket.disconnect();
+          statusText.textContent =
+            sessionResult.message || 'Unable to start live location sharing.';
+          return;
+        }
+
+        try {
+          await publishCurrentLocation();
+        } catch (error) {
+          statusText.textContent =
+            error.message || 'Unable to send your first live location.';
+        }
+
+        startLocationUpdates();
+      }
+
+      window.addEventListener('load', main);
+  </script>
+  <script>
+    // paste your original script here unchanged
+
+    // ADD THIS SMALL UI ENHANCEMENT (safe, no logic change)
+    const observer = new MutationObserver(() => {
+      const el = document.getElementById("connection-pill");
+      if (!el) return;
+
+      if (el.textContent.toLowerCase().includes("live")) {
+        el.classList.add("active");
+      } else {
+        el.classList.remove("active");
+      }
+    });
+
+    observer.observe(document.getElementById("connection-pill"), {
+      childList: true
+    });
+  </script>
+
+</body>
+</html>
+
+  
